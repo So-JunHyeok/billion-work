@@ -2,30 +2,40 @@
 
 프로젝트 기반 사내 업무지원시스템 MVP.
 
-## 현재 단계
+## 현재 구현 상태
 
-DB 상세 설계와 초기 마이그레이션 DDL까지 작성했습니다. 애플리케이션 코드는 아직 추가하지 않았으며 실제 MariaDB 실행 검증은 미완료입니다.
+- 완료: 기능·권한·화면·DB·API 설계, 초기 MariaDB DDL
+- 추가: React/TypeScript 시작 화면, Spring Boot 기본 서버, JPA/Flyway 설정, MariaDB Compose, 통합 테스트 및 CI
+- 다음: 직원 로그인 → 프로젝트·참여자 → 업무 처리·완료 승인 → 댓글·첨부·현황
 
-- 기술 구성: React + TypeScript / Spring Boot + JPA / MariaDB
-- 업무 흐름: 요청 → 진행 중 → 완료 요청 → 요청자 승인 → 완료
-- 직원 누구나 프로젝트 생성, 생성자는 프로젝트 관리자
-- 업무당 담당자 1명, 프로젝트 내 업무·댓글·첨부 공유
-- 최고관리자는 전체 조회, 완료 승인은 요청자만 수행
+**실행 방법: [로컬 개발환경 가이드](docs/local-development.md)**
+
+현재 프론트 화면은 백엔드·DB 연결 확인용입니다. 기존 샘플의 업무 기능을 아직 React로 이식하지 않았습니다.
+기본 계정·로그인 API는 아직 없으며 상태 확인 외 API는 차단합니다.
+
+## 구성
+
+| 경로 | 내용 |
+| --- | --- |
+| frontend/ | React + Vite + TypeScript |
+| backend/ | Java 21 + Spring Boot + JPA + Flyway (Maven) |
+| infra/ | MariaDB 개발용 Docker Compose |
+| docs/ | 설계·실행 문서 |
+| .github/workflows/ | 빌드·실제 MariaDB 통합 테스트 |
 
 ## 설계 문서
 
-[화면·권한·상태·DB·API·첨부파일·인수 검증 설계](docs/mvp-design.md)
+- [MVP 화면·권한·API 설계](docs/mvp-design.md)
+- [DB 컬럼·제약조건](docs/database-design.md)
+- [초기 DDL](backend/src/main/resources/db/migration/V1__init_schema.sql)
 
-문서의 사용자 확정 사항과 설계 기본안을 구분해 확인합니다. 구현 착수 시 기본안과 기술 버전을 검토합니다.
+## 핵심 업무 규칙
 
-- [DB 컬럼 사전·제약조건·적용 안내](docs/database-design.md)
-- [초기 MariaDB DDL](backend/src/main/resources/db/migration/V1__init_schema.sql)
+직원 누구나 프로젝트를 생성하며 생성자가 관리자입니다. 업무당 담당자 1명이며,
+담당자가 완료 요청한 뒤 요청자가 승인해야 완료됩니다. 같은 프로젝트에서는 업무·댓글·첨부를 공유합니다.
+최고관리자는 전체 조회가 가능하지만 대리 승인 권한을 자동으로 갖지 않습니다.
 
-## 예정 구성
+## 저장소 주의사항
 
-- frontend/: React 프론트엔드
-- backend/: Spring Boot 백엔드
-- infra/: MariaDB 및 개발 실행 설정
-- docs/: 설계 문서
-
-실제 직원·고객 자료, 비밀번호, 환경 설정의 비밀 값, 업로드 파일 및 DB 덤프는 저장소에 올리지 않습니다.
+실제 직원·고객 자료, 비밀번호, .env 실제 값, 업로드 파일, DB 덤프는 커밋하지 않습니다.
+실제 업무 기능·운영 배포 설정까지 완료한 프로젝트가 아닙니다.

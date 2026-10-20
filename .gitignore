@@ -1,0 +1,24 @@
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+application-secrets.properties
+application-secrets.yml
+application-secrets.yaml
+# Build outputs
+**/node_modules/
+**/dist/
+**/target/
+**/build/
+**/.gradle/
+# IDE and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+# Runtime data
+uploads/
+data/
+*.log
+*.sql.gz

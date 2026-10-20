@@ -1,0 +1,9 @@
+# Explicit local HTTP profile; never enable this profile for production HTTPS hosting.
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false
+logging:
+  level:
+    org.flywaydb: INFO
