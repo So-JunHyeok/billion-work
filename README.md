@@ -4,7 +4,7 @@
 
 ## 현재 단계
 
-설계 단계입니다. 애플리케이션 코드는 아직 추가하지 않았습니다.
+DB 상세 설계와 초기 마이그레이션 DDL까지 작성했습니다. 애플리케이션 코드는 아직 추가하지 않았으며 실제 MariaDB 실행 검증은 미완료입니다.
 
 - 기술 구성: React + TypeScript / Spring Boot + JPA / MariaDB
 - 업무 흐름: 요청 → 진행 중 → 완료 요청 → 요청자 승인 → 완료
@@ -17,6 +17,9 @@
 [화면·권한·상태·DB·API·첨부파일·인수 검증 설계](docs/mvp-design.md)
 
 문서의 사용자 확정 사항과 설계 기본안을 구분해 확인합니다. 구현 착수 시 기본안과 기술 버전을 검토합니다.
+
+- [DB 컬럼 사전·제약조건·적용 안내](docs/database-design.md)
+- [초기 MariaDB DDL](backend/src/main/resources/db/migration/V1__init_schema.sql)
 
 ## 예정 구성
 

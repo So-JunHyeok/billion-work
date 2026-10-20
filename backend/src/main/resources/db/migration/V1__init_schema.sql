@@ -1,0 +1,182 @@
+-- Initial schema; design target MariaDB 10.11+ (exact runtime version to be pinned).
+-- Empty schema only. No credentials, seed users, DROP, USE or CREATE DATABASE.
+-- Set JDBC/session timezone to UTC. Application supplies all event timestamps.
+
+CREATE TABLE TB_USER (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    login_id VARCHAR(100) NOT NULL COMMENT '로그인 ID; 서비스에서 소문자 ASCII 정규화',
+    password_hash VARCHAR(255) NOT NULL COMMENT '비밀번호 해시',
+    name VARCHAR(100) NOT NULL COMMENT '직원 표시명',
+    system_role VARCHAR(20) NOT NULL DEFAULT 'EMPLOYEE' COMMENT '시스템 권한',
+    active BOOLEAN NOT NULL DEFAULT TRUE COMMENT '계정 활성',
+    password_change_required BOOLEAN NOT NULL DEFAULT TRUE COMMENT '초기 비밀번호 변경 필요',
+    created_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    updated_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    version BIGINT NOT NULL DEFAULT 0 COMMENT 'JPA 낙관적 잠금 버전',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_user_login (login_id),
+    CONSTRAINT ck_user_role CHECK (system_role IN ('EMPLOYEE','SUPER_ADMIN')),
+    CONSTRAINT ck_user_flags CHECK (active IN (0,1) AND password_change_required IN (0,1)),
+    CONSTRAINT ck_user_version CHECK (version >= 0),
+    CONSTRAINT ck_user_text CHECK (CHAR_LENGTH(TRIM(login_id)) > 0 AND CHAR_LENGTH(TRIM(name)) > 0 AND CHAR_LENGTH(password_hash) > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='직원 계정';
+
+CREATE TABLE TB_PROJECT (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    name VARCHAR(100) NOT NULL COMMENT '프로젝트명',
+    description TEXT NULL COMMENT '설명, 최대 2000자',
+    created_by BIGINT NOT NULL COMMENT '생성자',
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/ARCHIVED',
+    created_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    updated_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    version BIGINT NOT NULL DEFAULT 0 COMMENT 'JPA 낙관적 잠금 버전',
+    PRIMARY KEY (id),
+    KEY ix_project_creator (created_by),
+    CONSTRAINT fk_project_creator FOREIGN KEY (created_by) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT ck_project_status CHECK (status IN ('ACTIVE','ARCHIVED')),
+    CONSTRAINT ck_project_text CHECK (CHAR_LENGTH(TRIM(name)) > 0 AND (description IS NULL OR CHAR_LENGTH(description) <= 2000)),
+    CONSTRAINT ck_project_version CHECK (version >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='프로젝트';
+
+CREATE TABLE TB_PROJECT_MEMBER (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    project_id BIGINT NOT NULL COMMENT '프로젝트',
+    user_id BIGINT NOT NULL COMMENT '직원',
+    role VARCHAR(20) NOT NULL DEFAULT 'MEMBER' COMMENT '프로젝트 역할',
+    active BOOLEAN NOT NULL DEFAULT TRUE COMMENT '참여 활성',
+    joined_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    left_at DATETIME(6) NULL COMMENT '참여 해제 시각',
+    version BIGINT NOT NULL DEFAULT 0 COMMENT 'JPA 낙관적 잠금 버전',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_member_project_user (project_id,user_id),
+    KEY ix_member_user_active (user_id,active,project_id),
+    CONSTRAINT fk_member_project FOREIGN KEY (project_id) REFERENCES TB_PROJECT (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_member_user FOREIGN KEY (user_id) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT ck_member_role CHECK (role IN ('MEMBER','MANAGER')),
+    CONSTRAINT ck_member_active CHECK ((active = 1 AND left_at IS NULL) OR (active = 0 AND left_at IS NOT NULL AND left_at >= joined_at)),
+    CONSTRAINT ck_member_version CHECK (version >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='프로젝트 참여자';
+
+CREATE TABLE TB_TASK (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    project_id BIGINT NOT NULL COMMENT '소속 프로젝트',
+    requester_id BIGINT NOT NULL COMMENT '요청자; 변경 불가',
+    assignee_id BIGINT NOT NULL COMMENT '담당자 1명',
+    title VARCHAR(200) NOT NULL COMMENT '업무명',
+    description TEXT NULL COMMENT '요청 내용 최대 10000자',
+    status VARCHAR(30) NOT NULL DEFAULT 'REQUESTED' COMMENT '업무 상태',
+    due_date DATE NULL COMMENT '한국 날짜 기준 기한',
+    completed_at DATETIME(6) NULL COMMENT '현재 최종 승인 시각',
+    canceled_at DATETIME(6) NULL COMMENT '취소 시각',
+    created_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    updated_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    version BIGINT NOT NULL DEFAULT 0 COMMENT 'JPA 낙관적 잠금 버전',
+    PRIMARY KEY (id),
+    KEY ix_task_project_status_due (project_id,status,due_date,id),
+    KEY ix_task_assignee_status_due (assignee_id,status,due_date,id),
+    KEY ix_task_requester_status_updated (requester_id,status,updated_at,id),
+    KEY ix_task_project_completed (project_id,completed_at,id),
+    CONSTRAINT fk_task_project FOREIGN KEY (project_id) REFERENCES TB_PROJECT (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_task_requester FOREIGN KEY (requester_id) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_task_assignee FOREIGN KEY (assignee_id) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT ck_task_status CHECK (status IN ('REQUESTED','IN_PROGRESS','REVIEW_REQUESTED','COMPLETED','CANCELED')),
+    CONSTRAINT ck_task_terminal CHECK ((status = 'COMPLETED' AND completed_at IS NOT NULL AND canceled_at IS NULL) OR (status = 'CANCELED' AND canceled_at IS NOT NULL AND completed_at IS NULL) OR (status IN ('REQUESTED','IN_PROGRESS','REVIEW_REQUESTED') AND completed_at IS NULL AND canceled_at IS NULL)),
+    CONSTRAINT ck_task_text CHECK (CHAR_LENGTH(TRIM(title)) > 0 AND (description IS NULL OR CHAR_LENGTH(description) <= 10000)),
+    CONSTRAINT ck_task_version CHECK (version >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업무';
+
+CREATE TABLE TB_TASK_SUBMISSION (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    task_id BIGINT NOT NULL COMMENT '업무',
+    round_no INT NOT NULL COMMENT '업무 내 제출 회차, 1부터',
+    submitted_by BIGINT NOT NULL COMMENT '제출자',
+    result TEXT NOT NULL COMMENT '처리 결과 최대 10000자',
+    due_date_snapshot DATE NULL COMMENT '제출 당시 기한',
+    submitted_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING' COMMENT '제출 상태',
+    resolved_by BIGINT NULL COMMENT '승인/보완/철회/취소 처리자',
+    resolved_at DATETIME(6) NULL COMMENT '제출 종결 시각',
+    resolution_reason TEXT NULL COMMENT '보완/철회/취소 사유 최대 2000자',
+    pending_task_id BIGINT GENERATED ALWAYS AS (CASE WHEN status = 'PENDING' THEN task_id ELSE NULL END) PERSISTENT COMMENT 'DB 계산 열; 업무별 대기 제출 1건 강제; JPA 쓰기 금지',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_submission_round (task_id,round_no),
+    UNIQUE KEY uk_submission_pending (pending_task_id),
+    UNIQUE KEY uk_submission_id_task (id,task_id),
+    KEY ix_submission_submitter (submitted_by),
+    KEY ix_submission_resolver (resolved_by),
+    CONSTRAINT fk_submission_task FOREIGN KEY (task_id) REFERENCES TB_TASK (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_submission_submitter FOREIGN KEY (submitted_by) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_submission_resolver FOREIGN KEY (resolved_by) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT ck_submission_round CHECK (round_no >= 1),
+    CONSTRAINT ck_submission_status CHECK (status IN ('PENDING','APPROVED','CHANGES_REQUESTED','WITHDRAWN','CANCELED')),
+    CONSTRAINT ck_submission_result CHECK (CHAR_LENGTH(TRIM(result)) > 0 AND CHAR_LENGTH(result) <= 10000),
+    CONSTRAINT ck_submission_resolution CHECK ((status = 'PENDING' AND resolved_by IS NULL AND resolved_at IS NULL AND resolution_reason IS NULL) OR (status <> 'PENDING' AND resolved_by IS NOT NULL AND resolved_at IS NOT NULL AND resolved_at >= submitted_at)),
+    CONSTRAINT ck_submission_reason CHECK ((resolution_reason IS NULL OR CHAR_LENGTH(resolution_reason) <= 2000) AND (status NOT IN ('CHANGES_REQUESTED','WITHDRAWN','CANCELED') OR (resolution_reason IS NOT NULL AND CHAR_LENGTH(TRIM(resolution_reason)) > 0)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='완료 제출 회차';
+
+CREATE TABLE TB_TASK_COMMENT (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    task_id BIGINT NOT NULL COMMENT '업무',
+    author_id BIGINT NOT NULL COMMENT '작성자',
+    body TEXT NOT NULL COMMENT '댓글 최대 2000자',
+    created_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_comment_id_task (id,task_id),
+    KEY ix_comment_task_created (task_id,created_at,id),
+    KEY ix_comment_author (author_id),
+    CONSTRAINT fk_comment_task FOREIGN KEY (task_id) REFERENCES TB_TASK (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_comment_author FOREIGN KEY (author_id) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT ck_comment_body CHECK (CHAR_LENGTH(TRIM(body)) > 0 AND CHAR_LENGTH(body) <= 2000)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업무 댓글';
+
+CREATE TABLE TB_TASK_FILE (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    task_id BIGINT NOT NULL COMMENT '업무',
+    submission_id BIGINT NULL COMMENT '결과 제출 회차',
+    comment_id BIGINT NULL COMMENT '댓글',
+    kind VARCHAR(20) NOT NULL COMMENT 'REQUEST/RESULT/COMMENT',
+    original_name VARCHAR(255) NOT NULL COMMENT '다운로드 표시명',
+    storage_key VARCHAR(255) NOT NULL COMMENT '서버 생성 ASCII UUID 저장키',
+    content_type VARCHAR(150) NOT NULL COMMENT '서버 판별 MIME',
+    size_bytes BIGINT NOT NULL COMMENT '바이트; 최대 10485760',
+    uploaded_by BIGINT NOT NULL COMMENT '업로더',
+    created_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    deleted_at DATETIME(6) NULL COMMENT '논리 삭제 시각',
+    deleted_by BIGINT NULL COMMENT '삭제자',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_file_storage (storage_key),
+    KEY ix_file_task_kind (task_id,deleted_at,kind),
+    KEY ix_file_submission_task (submission_id,task_id),
+    KEY ix_file_comment_task (comment_id,task_id),
+    KEY ix_file_uploader (uploaded_by),
+    KEY ix_file_deleter (deleted_by),
+    CONSTRAINT fk_file_task FOREIGN KEY (task_id) REFERENCES TB_TASK (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_file_submission_task FOREIGN KEY (submission_id,task_id) REFERENCES TB_TASK_SUBMISSION (id,task_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_file_comment_task FOREIGN KEY (comment_id,task_id) REFERENCES TB_TASK_COMMENT (id,task_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_file_uploader FOREIGN KEY (uploaded_by) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_file_deleter FOREIGN KEY (deleted_by) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT ck_file_kind CHECK ((kind = 'REQUEST' AND submission_id IS NULL AND comment_id IS NULL) OR (kind = 'RESULT' AND submission_id IS NOT NULL AND comment_id IS NULL) OR (kind = 'COMMENT' AND submission_id IS NULL AND comment_id IS NOT NULL)),
+    CONSTRAINT ck_file_size CHECK (size_bytes BETWEEN 0 AND 10485760),
+    CONSTRAINT ck_file_delete CHECK ((deleted_at IS NULL AND deleted_by IS NULL) OR (deleted_at IS NOT NULL AND deleted_by IS NOT NULL AND deleted_at >= created_at)),
+    CONSTRAINT ck_file_text CHECK (CHAR_LENGTH(TRIM(original_name)) > 0 AND CHAR_LENGTH(TRIM(storage_key)) > 0 AND CHAR_LENGTH(TRIM(content_type)) > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='첨부파일 메타데이터';
+
+CREATE TABLE TB_TASK_HISTORY (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '기본키',
+    task_id BIGINT NOT NULL COMMENT '업무',
+    actor_id BIGINT NOT NULL COMMENT '수행자',
+    event_type VARCHAR(50) NOT NULL COMMENT '사건 코드',
+    before_value LONGTEXT NULL COMMENT '변경 전 JSON',
+    after_value LONGTEXT NULL COMMENT '변경 후 JSON',
+    reason TEXT NULL COMMENT '사유 최대 2000자',
+    created_at DATETIME(6) NOT NULL COMMENT 'UTC 사건 시각; 서버에서 지정',
+    PRIMARY KEY (id),
+    KEY ix_history_task_created (task_id,created_at,id),
+    KEY ix_history_actor (actor_id),
+    CONSTRAINT fk_history_task FOREIGN KEY (task_id) REFERENCES TB_TASK (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_history_actor FOREIGN KEY (actor_id) REFERENCES TB_USER (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT ck_history_before CHECK (before_value IS NULL OR JSON_VALID(before_value)),
+    CONSTRAINT ck_history_after CHECK (after_value IS NULL OR JSON_VALID(after_value)),
+    CONSTRAINT ck_history_reason CHECK (reason IS NULL OR CHAR_LENGTH(reason) <= 2000),
+    CONSTRAINT ck_history_event CHECK (event_type IN ('CREATED','UPDATED','ASSIGNEE_CHANGED','DUE_DATE_CHANGED','STARTED','UNSTARTED','SUBMITTED','APPROVED','CHANGES_REQUESTED','WITHDRAWN','REOPENED','CANCELED','COMMENT_ADDED','FILE_ADDED','FILE_DELETED'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업무 변경 이력';
