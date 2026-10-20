@@ -6,8 +6,8 @@ DDL: [V1__init_schema.sql](../backend/src/main/resources/db/migration/V1__init_s
 ## 적용 상태
 - 8개 업무 테이블 / 77개 컬럼. Flyway 자체 이력 테이블은 업무 테이블 수에 포함하지 않는다.
 - MariaDB 10.11 이상을 설계 기준으로 삼았다. 실제 운영 버전과 Flyway/JDBC/JPA 버전은 구현 단계에서 고정하고 같은 버전으로 검증한다.
-- 현재 환경에 MariaDB 서버·클라이언트와 Docker가 없어 실제 DDL 실행은 수행하지 않았다.
-- 테이블 생성 순서, FK 대상/컬럼, 컬럼 중복, 제약조건 이름 중복은 정적 검사했다. 실제 SQL 구문·버전 호환성·JPA 매핑 검증은 미완료다.
+- 로컬 도구 환경에는 MariaDB/Docker가 없지만, GitHub Actions의 MariaDB 11.4.5 컨테이너에서 V1 DDL 적용을 확인했다.
+- 정적 검사와 MariaDB 11.4.5에서 DDL 실행·핵심 제약조건 검증을 통과했다. JPA 업무 엔티티는 아직 없어 전체 매핑 검증은 다음 단계다.
 - 운영 DB에 적용한 상태가 아니다. 빈 개발 DB에서 먼저 적용·검증해야 한다.
 
 ## 공통 규칙
@@ -312,7 +312,13 @@ CONSTRAINT ck_history_event CHECK (event_type IN ('CREATED','UPDATED','ASSIGNEE_
 7. 사전 업무 테이블이 있는 DB에는 무조건 적용하거나 baseline을 임의 지정하지 않는다.
 8. 관리자 계정·샘플 데이터·비밀번호는 V1에 포함하지 않는다.
 
-## 실제 MariaDB에서 남은 검증
+## MariaDB 검증 목록
+
+2026-10-20 GitHub Actions에서 최초 적용, 제출 회차/대기 제출 중복, 다른 업무 결과 첨부 연결 검증을 통과했다. 아래 목록 중 그 외 항목은 후속 테스트가 필요하다.
+
+[실행 결과](https://github.com/So-JunHyeok/billion-work/actions/runs/39442673424)
+
+
 | 검증 | 정상 입력 | 실패해야 하는 입력 |
 | --- | --- | --- |
 | 최초 적용 | 빈 DB에 테이블 8개 생성 | 기존 테이블에 재실행 |
